@@ -12,9 +12,13 @@ Manages user interaction with virtual objects to enable one-finger tap, one- and
 
 import UIKit
 import ARKit
+import AVFoundation
 
 /// - Tag: VirtualObjectInteraction
 class VirtualObjectInteraction: NSObject, UIGestureRecognizerDelegate {
+    
+    var spinDuration: CFTimeInterval = 1.0
+    var audioRate: Float = 1.0
     
     /// Developer setting to translate assuming the detected plane extends infinitely.
     let translateAssumingInfinitePlane = true
@@ -24,6 +28,8 @@ class VirtualObjectInteraction: NSObject, UIGestureRecognizerDelegate {
     
     /// A reference to the view controller.
     let viewController: ViewController
+    
+    let virtualObjectLoader: VirtualObjectLoader
     
     /**
      The object that has been most recently intereacted with.
@@ -39,13 +45,44 @@ class VirtualObjectInteraction: NSObject, UIGestureRecognizerDelegate {
         }
     }
     
+    private var audioPlayer: AVAudioPlayer?
+    
+    private lazy var sittingModelURL: URL = {
+        guard let url = Bundle.main.url(forResource: "Models.scnassets/oiiaioSitting", withExtension: "scn") else {
+            fatalError("Error: Could not find oiiaioSitting.scn in Models.scnassets.")
+        }
+        return url
+    }()
+    
+    // Initialize the standing model URL as a lazy property
+        private lazy var standingModelURL: URL = {
+            guard let url = Bundle.main.url(forResource: "Cat", withExtension: "scn", subdirectory: "Models.scnassets") else {
+                fatalError("Error: Could not find Cat.scn in Models.scnassets.")
+            }
+            return url
+        }()
+
+
+    
     /// The tracked screen position used to update the `trackedObject`'s position.
     private var currentTrackingPosition: CGPoint?
     
-    init(sceneView: VirtualObjectARView, viewController: ViewController) {
+    init(sceneView: VirtualObjectARView, viewController: ViewController, virtualObjectLoader: VirtualObjectLoader) {
         self.sceneView = sceneView
         self.viewController = viewController
+        self.virtualObjectLoader = virtualObjectLoader
         super.init()
+        
+        // Prepare the audio
+        if let audioURL = Bundle.main.url(forResource: "oiiaSound", withExtension: "m4a") {
+            do {
+                audioPlayer = try AVAudioPlayer(contentsOf: audioURL)
+                audioPlayer?.prepareToPlay()
+                audioPlayer?.numberOfLoops = -1 // Loop while moving
+            } catch {
+                print("Error loading audio file: \(error)")
+            }
+        }
         
         createPanGestureRecognizer(sceneView)
         
@@ -64,6 +101,7 @@ class VirtualObjectInteraction: NSObject, UIGestureRecognizerDelegate {
         sceneView.addGestureRecognizer(panGesture)
     }
     
+    
     // MARK: - Gesture Actions
     
     @objc
@@ -72,33 +110,71 @@ class VirtualObjectInteraction: NSObject, UIGestureRecognizerDelegate {
         case .began:
             // Check for an object at the touch location.
             if let object = objectInteracting(with: gesture, in: sceneView) {
-                trackedObject = object
+                print("Pan began on object: \(object.modelName)")
+                // Replace the object with the sitting model
+                if let sittingModel = VirtualObject(url: sittingModelURL) {
+                    print("Creating sitting model for replacement.")
+                    sittingModel.load()
+                    print("Sitting model loaded.")
+
+                    virtualObjectLoader.replaceVirtualObject(object, with: sittingModel, in: sceneView)
+                    print("Replaced object with sitting model.")
+
+                    // Set the tracked object to the new sitting model
+                    trackedObject = sittingModel
+
+                    // Start spinning and audio
+                    startSpinningAndAudio(for: sittingModel)
+                } else {
+                    print("Error: Could not create sittingModel")
+                    // Fall back to using the original object
+                    trackedObject = object
+                    startSpinningAndAudio(for: object)
+                }
+            } else {
+                print("No object found at pan gesture location.")
             }
-            
+
         case .changed where gesture.isThresholdExceeded:
             guard let object = trackedObject else { return }
-            // Move an object if the displacment threshold has been met.
+            // Move the object if the displacement threshold has been met.
             translate(object, basedOn: updatedTrackingPosition(for: object, from: gesture))
-
             gesture.setTranslation(.zero, in: sceneView)
-            
+
         case .changed:
-            // Ignore the pan gesture until the displacment threshold is exceeded.
+            // Ignore the pan gesture until the displacement threshold is exceeded.
             break
-            
+
         case .ended:
             // Update the object's position when the user stops panning.
             guard let object = trackedObject else { break }
             setDown(object, basedOn: updatedTrackingPosition(for: object, from: gesture))
-            
+            stopSpinningAndAudio(for: object) // Stop spinning and audio
+
+            // Replace the sitting cat with the standing cat
+            if let standingModel = VirtualObject(url: standingModelURL) {
+                print("Creating standing model for replacement.")
+                standingModel.load()
+                print("Standing model loaded.")
+
+                virtualObjectLoader.replaceVirtualObject(object, with: standingModel, in: sceneView)
+                print("Replaced sitting model with standing model.")
+
+                // Update the selected object
+                selectedObject = standingModel
+            } else {
+                print("Error: Could not create standingModel")
+            }
             fallthrough
-            
+
         default:
             // Reset the current position tracking.
             currentTrackingPosition = nil
             trackedObject = nil
         }
     }
+
+
     
     func updatedTrackingPosition(for object: VirtualObject, from gesture: UIPanGestureRecognizer) -> CGPoint {
         let translation = gesture.translation(in: sceneView)
@@ -123,21 +199,21 @@ class VirtualObjectInteraction: NSObject, UIGestureRecognizerDelegate {
         gesture.rotation = 0
     }
     
-    /// Handles the interaction when the user taps the screen.
     @objc
     func didTap(_ gesture: UITapGestureRecognizer) {
         let touchLocation = gesture.location(in: sceneView)
-        
         if let tappedObject = sceneView.virtualObject(at: touchLocation) {
-            
-            // If an object exists at the tap location, select it.
+            // Select the tapped object
             selectedObject = tappedObject
         } else if let object = selectedObject {
-            
-            // Otherwise, move the selected object to its new position at the tap location.
+            // Move the selected object to the new position
             setDown(object, basedOn: touchLocation)
         }
     }
+
+
+
+
     
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
         // Allow objects to be translated and rotated at the same time.
@@ -197,6 +273,34 @@ class VirtualObjectInteraction: NSObject, UIGestureRecognizerDelegate {
                 self.sceneView.addOrUpdateAnchor(for: object)
             }
         }
+    }
+    
+    func startSpinningAndAudio(for object: VirtualObject) {
+        // Reset audio playback to the beginning
+        audioPlayer?.stop()
+        audioPlayer?.currentTime = 0
+        audioPlayer?.enableRate = true
+        audioPlayer?.rate = audioRate // Use the audioRate property
+        audioPlayer?.play()
+
+        // Apply a rotation animation to the object
+        let spinAnimation = CABasicAnimation(keyPath: "rotation")
+        spinAnimation.fromValue = SCNVector4(0, 1, 0, 0)
+        spinAnimation.toValue = SCNVector4(0, 1, 0, Float.pi * 2)
+        spinAnimation.duration = spinDuration // Use the adjusted spinDuration
+        spinAnimation.repeatCount = .infinity
+        object.addAnimation(spinAnimation, forKey: "spin")
+    }
+
+
+
+
+    func stopSpinningAndAudio(for object: VirtualObject) {
+        // Remove the spin animation
+        object.removeAnimation(forKey: "spin", blendOutDuration: 0)
+        
+        // Stop audio
+        audioPlayer?.stop()
     }
 }
 

@@ -35,6 +35,41 @@ class VirtualObjectLoader {
         }
     }
     
+    func replaceVirtualObject(_ oldObject: VirtualObject, with newObject: VirtualObject, in sceneView: ARSCNView) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            newObject.load()
+            DispatchQueue.main.async {
+                print("Replacing \(oldObject.modelName) with \(newObject.modelName).")
+                
+                // Match position, rotation, and scale
+                newObject.position = oldObject.position
+                newObject.rotation = oldObject.rotation
+                newObject.scale = oldObject.scale
+                
+                // Remove the old object
+                oldObject.removeFromParentNode()
+                print("Removed old object from the scene.")
+                
+                // Add the new object to the scene
+                sceneView.scene.rootNode.addChildNode(newObject)
+                print("Added new object to the scene.")
+                
+                // Update the loadedObjects array
+                if let index = self.loadedObjects.firstIndex(of: oldObject) {
+                    self.loadedObjects[index] = newObject
+                    print("Updated loadedObjects array.")
+                } else {
+                    self.loadedObjects.append(newObject)
+                    print("Added new object to loadedObjects.")
+                }
+            }
+        }
+    }
+
+
+
+    
+    
     // MARK: - Removing Objects
     
     func removeAllVirtualObjects() {
