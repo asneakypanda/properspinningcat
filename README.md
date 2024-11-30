@@ -2,6 +2,24 @@
 
 Place virtual content at tracked, real-world locations, and enable the user to interact with virtual content by using gestures. 
 
+## Feature's I added to this:
+
+Added the 3D models for the standing cat, sitting cat, and audio for the cat and implemented a slider to control the speed at which the cat spins and the audio plays.
+
+**ViewController:**
+Added code in viewDidLoad() to set spin and audio rate based on slider
+
+Made the function setupSpeedSlider() and the @obj function speedSliderValueChanged to handle the values of the slider
+
+Updated override func viewDidLoad() to initialize slider and base rate at which the cat spins and audio plays.
+
+
+**VirtualObjectInteraction:**  
+Added function startSpinningAndAudio as well as stopSpinningAndAudio. Initialized private lazy var for the sitting and standing model’s, and updated didPan @objc function to handle the action of spinning and starting the audio as well as using replaceVirtualObject in it to replace the standing model with the 3d model when a user taps and holds on the cat to move it around
+
+**VirtualObjectLoader:**
+Added function replaceVirtualObject to update the array of models. This function solely handles replacing the standing 3d model with the sitting one.
+
 ## Overview
 
 The key facet of an AR experience is the ability to intermix virtual and real-world objects. A flat surface is the optimum location for setting a virtual object. To assist ARKit with finding surfaces, you tell the user to move their device in ways that help ARKit prepare the experience. ARKit provides a view that tailors its instructions to the user, guiding them to the surface that your app needs. 
