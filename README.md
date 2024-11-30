@@ -14,7 +14,7 @@ Made the function setupSpeedSlider() and the @obj function speedSliderValueChang
 Updated override func viewDidLoad() to initialize slider and base rate at which the cat spins and audio plays.
 
 
-**VirtualObjectInteraction:**  
+**VirtualObjectInteraction:**
 Added function startSpinningAndAudio as well as stopSpinningAndAudio. Initialized private lazy var for the sitting and standing model’s, and updated didPan @objc function to handle the action of spinning and starting the audio as well as using replaceVirtualObject in it to replace the standing model with the 3d model when a user taps and holds on the cat to move it around
 
 **VirtualObjectLoader:**
